@@ -1,1 +1,110 @@
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==== Thème sombre par défaut (pitch.com style) ==== */
+:root {
+  --color-bg: #0f172a;
+  --color-bg-light: #1e293b;
+  --color-primary: #38bdf8;
+  --color-secondary: #fbbf24;
+  --color-text: #f1f5f9;
+  --color-muted: #64748b;
+}
+
+html {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Inter', sans-serif;
+  min-height: 100%;
+}
+
+body {
+  @apply min-h-screen bg-slate-950 text-slate-50;
+  font-family: 'Inter', sans-serif;
+}
+
+a {
+  @apply text-sky-400 hover:underline;
+  transition: color 0.15s;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  background: #1e293b;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 6px;
+}
+
+/* ===============================
+   Classes utilitaires custom
+   =============================== */
+.btn {
+  @apply px-4 py-2 rounded font-semibold transition bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50;
+}
+.btn-outline {
+  @apply px-4 py-2 rounded font-semibold border border-sky-500 text-sky-400 bg-transparent hover:bg-sky-950;
+}
+
+/* Card/Container */
+.card {
+  @apply bg-slate-900 rounded-lg shadow-lg p-6 border border-slate-800;
+}
+
+/* Animations de fade-in */
+.fade-in {
+  animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes fadeIn {
+  0% { opacity: 0; transform: translateY(12px);}
+  100% { opacity: 1; transform: translateY(0);}
+}
+
+/* Responsive grille d’articles */
+.articles-grid {
+  @apply grid gap-6 md:grid-cols-2 xl:grid-cols-3;
+}
+
+/* Prose pour les contenus de posts */
+.prose {
+  @apply prose-invert max-w-none prose-lg;
+}
+
+/* Loader */
+.loader {
+  border: 3px solid #334155;
+  border-top: 3px solid #38bdf8;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  animation: spin 0.9s linear infinite;
+  margin: auto;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg);}
+  100% { transform: rotate(360deg);}
+}
+
+/* Override Tailwind pour dark (pitch.com style) */
+.dark {
+  --color-bg: #0f172a;
+  --color-bg-light: #1e293b;
+  --color-primary: #38bdf8;
+  --color-secondary: #fbbf24;
+  --color-text: #f1f5f9;
+  --color-muted: #64748b;
+}
+
+/* Sélecteur de texte pour admin */
+input, textarea, select {
+  @apply bg-slate-800 text-slate-100 border border-slate-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-400;
+  transition: border 0.15s, box-shadow 0.15s;
+}
+
+/* Pour les notifications */
+.toast {
+  @apply fixed bottom-6 right-6 bg-sky-700 text-white px-4 py-2 rounded shadow-lg z-50;
+  }
