@@ -1,1 +1,31 @@
-
+{
+  "name": "buja-devil-blog",
+  "version": "1.0.0",
+  "description": "BujaDevil – Blog personnel nouvelle génération, design pitch.com/coca-cola, full React + Firebase + Tailwind, optimisé Vercel.",
+  "author": "Francis Uliel & La Crème Du Gaming",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "vite preview",
+    "format": "prettier --write \"src/**/*.{js,jsx,css,md}\"",
+    "lint": "eslint src --ext js,jsx"
+  },
+  "dependencies": {
+    "firebase": "^10.12.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "autoprefixer": "^10.4.18",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react": "^7.34.1",
+    "postcss": "^8.4.34",
+    "prettier": "^3.2.5",
+    "tailwindcss": "^3.4.1",
+    "vite": "^5.2.0"
+  }
+}
