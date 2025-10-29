@@ -1,110 +1,192 @@
-
+/* === Tailwind CSS base import === */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ==== Thème sombre par défaut (pitch.com style) ==== */
+/* ===== Custom Pitch.com/Coca-Cola Inspired Styles ===== */
+
+/* Fonts */
+body, html {
+  font-family: 'Inter', 'Segoe UI', Arial, Helvetica, sans-serif;
+  background: #101010;
+  color: #f6f6f6;
+  min-height: 100vh;
+}
+
+/* Main theme colors */
 :root {
-  --color-bg: #0f172a;
-  --color-bg-light: #1e293b;
-  --color-primary: #38bdf8;
-  --color-secondary: #fbbf24;
-  --color-text: #f1f5f9;
-  --color-muted: #64748b;
+  --color-primary: #ff003c;
+  --color-accent: #07f8ff;
+  --color-bg: #101010;
+  --color-bg-alt: #191919;
+  --color-text: #f6f6f6;
+  --color-muted: #888888;
 }
 
-html {
-  background: var(--color-bg);
+/* Selection highlight */
+::selection {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+/* Pitch-style bold titles */
+h1, h2, h3, h4, h5, h6 {
+  font-family: inherit;
+  font-weight: 900;
+  letter-spacing: -0.015em;
   color: var(--color-text);
-  font-family: 'Inter', sans-serif;
-  min-height: 100%;
 }
 
-body {
-  @apply min-h-screen bg-slate-950 text-slate-50;
-  font-family: 'Inter', sans-serif;
-}
-
-a {
-  @apply text-sky-400 hover:underline;
-  transition: color 0.15s;
-}
-
-::-webkit-scrollbar {
-  width: 8px;
-  background: #1e293b;
-}
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 6px;
-}
-
-/* ===============================
-   Classes utilitaires custom
-   =============================== */
+/* Buttons / CTA */
 .btn {
-  @apply px-4 py-2 rounded font-semibold transition bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50;
+  @apply px-6 py-2 rounded-full font-bold text-base transition-colors duration-200;
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 2px 14px 0 rgb(255 0 60 / 10%);
+  border: none;
+  cursor: pointer;
 }
-.btn-outline {
-  @apply px-4 py-2 rounded font-semibold border border-sky-500 text-sky-400 bg-transparent hover:bg-sky-950;
+.btn:hover, .btn:focus {
+  background: var(--color-accent);
+  color: #101010;
+  outline: none;
 }
 
-/* Card/Container */
+/* Card */
 .card {
-  @apply bg-slate-900 rounded-lg shadow-lg p-6 border border-slate-800;
+  @apply rounded-2xl shadow-lg bg-[#18181b] border border-[#232323] p-5;
+  transition: box-shadow .2s, border-color .2s;
+}
+.card:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 24px 0 rgb(255 0 60 / 14%);
 }
 
-/* Animations de fade-in */
-.fade-in {
-  animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-@keyframes fadeIn {
-  0% { opacity: 0; transform: translateY(12px);}
-  100% { opacity: 1; transform: translateY(0);}
-}
-
-/* Responsive grille d’articles */
-.articles-grid {
-  @apply grid gap-6 md:grid-cols-2 xl:grid-cols-3;
-}
-
-/* Prose pour les contenus de posts */
-.prose {
-  @apply prose-invert max-w-none prose-lg;
-}
-
-/* Loader */
-.loader {
-  border: 3px solid #334155;
-  border-top: 3px solid #38bdf8;
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  animation: spin 0.9s linear infinite;
-  margin: auto;
-}
-@keyframes spin {
-  0% { transform: rotate(0deg);}
-  100% { transform: rotate(360deg);}
-}
-
-/* Override Tailwind pour dark (pitch.com style) */
-.dark {
-  --color-bg: #0f172a;
-  --color-bg-light: #1e293b;
-  --color-primary: #38bdf8;
-  --color-secondary: #fbbf24;
-  --color-text: #f1f5f9;
-  --color-muted: #64748b;
-}
-
-/* Sélecteur de texte pour admin */
+/* Input & Textarea */
 input, textarea, select {
-  @apply bg-slate-800 text-slate-100 border border-slate-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-400;
-  transition: border 0.15s, box-shadow 0.15s;
+  @apply rounded-lg px-4 py-2 bg-[#232323] text-[#f6f6f6] border border-[#333] focus:outline-none focus:border-[#ff003c] transition;
 }
 
-/* Pour les notifications */
-.toast {
-  @apply fixed bottom-6 right-6 bg-sky-700 text-white px-4 py-2 rounded shadow-lg z-50;
-  }
+input[type="file"] {
+  border: none;
+  background: transparent;
+}
+
+label {
+  @apply font-semibold text-sm text-[#bbb] mb-1 block;
+}
+
+/* Dark mode switch */
+.theme-switch {
+  @apply inline-flex items-center cursor-pointer select-none;
+}
+.theme-switch input[type="checkbox"] {
+  display: none;
+}
+.theme-switch .slider {
+  @apply w-10 h-5 rounded-full bg-[#333] transition;
+  position: relative;
+}
+.theme-switch input[type="checkbox"]:checked + .slider {
+  background: var(--color-primary);
+}
+.theme-switch .slider::before {
+  content: '';
+  @apply absolute left-1 top-1 w-3 h-3 rounded-full bg-[#fff] transition;
+  transform: translateX(0);
+}
+.theme-switch input[type="checkbox"]:checked + .slider::before {
+  transform: translateX(20px);
+  background: var(--color-accent);
+}
+
+/* Comments */
+.comment {
+  @apply bg-[#16161a] p-4 rounded-xl mb-2 border border-[#232323];
+}
+.comment-author {
+  @apply text-[#ff003c] font-bold mr-2 text-sm;
+}
+.comment-date {
+  @apply text-xs text-[#888];
+}
+.comment-body {
+  @apply text-base mt-1 whitespace-pre-line;
+}
+
+/* Custom Loader */
+.loader-anim {
+  @apply flex items-center justify-center;
+  min-height: 200px;
+}
+.loader-anim .dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  margin: 0 8px;
+  background: var(--color-primary);
+  display: inline-block;
+  animation: loader-bounce 1s infinite alternate;
+}
+.loader-anim .dot:nth-child(2) { animation-delay: .2s; background: #fff; }
+.loader-anim .dot:nth-child(3) { animation-delay: .4s; background: var(--color-accent);}
+@keyframes loader-bounce {
+  to { transform: translateY(-18px) scale(1.16);}
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; background: #191919;}
+::-webkit-scrollbar-thumb { background: #333; border-radius: 8px;}
+::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
+::-webkit-scrollbar-corner { background: #101010; }
+
+/* Responsive */
+@media (max-width: 700px) {
+  .card { @apply p-3; }
+  .btn  { @apply px-4 py-2 text-sm; }
+  .loader-anim { min-height: 120px; }
+}
+
+/* Pitch.com inspired grid */
+.grid-autofill {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 2rem;
+}
+
+/* Animations, transitions, and effects */
+.fade-in {
+  animation: fadeInUp 0.7s cubic-bezier(.5,1.6,.4,1) both;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(30px);}
+  to   { opacity: 1; transform: none;}
+}
+
+/* Blurred background effect */
+.blur-bg {
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  background-color: rgba(16, 16, 16, .78);
+  border-radius: 1.25rem;
+  border: 1px solid rgba(36,36,36,0.15);
+}
+
+/* Utility for CocaCola-red text */
+.coca-red {
+  color: #e50914;
+  font-weight: 800;
+  letter-spacing: -.5px;
+}
+
+/* Utility classes for convenience */
+.text-shadow {
+  text-shadow: 0 2px 12px rgb(0 0 0 / 30%);
+}
+.shadow-accent {
+  box-shadow: 0 2px 18px 0 var(--color-accent);
+}
+
+/* Hide scrollbars for code blocks */
+pre::-webkit-scrollbar, code::-webkit-scrollbar { height: 6px; background: #232323;}
+pre::-webkit-scrollbar-thumb, code::-webkit-scrollbar-thumb { background: #ff003c; border-radius: 6px;}
