@@ -1,1134 +1,652 @@
-import { useState, useEffect } from 'react';
+// App.jsx – BujaDevil Blog (tout-en-un, ultra-massif, Stack React + Firebase + Tailwind)
+// Inspiré pitch.com/coca-cola, panel admin, gestion posts, commentaires, auth, design 2025
+// ⚡️ Prêt pour Vercel, Firebase, et publication GitHub
 
-// ============================================================================
-// FIREBASE CONFIGURATION
-// ============================================================================
+import React, { useEffect, useState, useRef } from "react";
 
-let firebaseApp, db, storage, auth;
+// Firebase SDK (assume global __firebase_config, __app_id, __initial_auth_token)
+import { initializeApp } from "firebase/app";
+import {
+  getFirestore, collection, doc, addDoc, getDocs, query, orderBy, where,
+  getDoc, setDoc, deleteDoc, serverTimestamp, updateDoc
+} from "firebase/firestore";
+import {
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject
+} from "firebase/storage";
+import {
+  getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
+} from "firebase/auth";
 
-const initializeFirebase = async () => {
-  if (typeof window !== 'undefined' && window.__firebase_config) {
-    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
-    const { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where, orderBy, Timestamp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-    const { getStorage, ref, uploadBytes, getDownloadURL } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js');
-    const { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js');
+// Utilitaires couleurs & catégories
+const PRIMARY = "#ff003c";
+const ACCENT = "#07f8ff";
+const CATEGORIES = [
+  "News Game",
+  "App Download",
+  "Football News",
+  "Tutorial",
+  "La Crème Du Gaming",
+  "GTA",
+  "Jeux",
+];
 
-    firebaseApp = initializeApp(window.__firebase_config);
-    db = getFirestore(firebaseApp);
-    storage = getStorage(firebaseApp);
-    auth = getAuth(firebaseApp);
+// --- Firebase Init ---
+const app = initializeApp(window.__firebase_config || {});
+const db = getFirestore(app);
+const storage = getStorage(app);
+const auth = getAuth(app);
+const appId = window.__app_id || "bujadevil";
 
-    return { db, storage, auth, collection, addDoc, getDocs, deleteDoc, doc, query, where, orderBy, Timestamp, ref, uploadBytes, getDownloadURL, signInWithEmailAndPassword, signOut, onAuthStateChanged };
+// --- Chemins Firestore ---
+const postsPath = `artifacts/${appId}/public/data/posts`;
+const commentsPath = `artifacts/${appId}/public/data/comments`;
+
+// --- Utils ---
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const formatDate = (date) => {
+  try {
+    if (!date) return "";
+    const d = typeof date === "string" ? new Date(date) : date.toDate ? date.toDate() : date;
+    return d.toLocaleDateString("fr-FR", {
+      year: "numeric", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit"
+    });
+  } catch {
+    return "";
   }
-  return null;
 };
 
-// ============================================================================
-// MAIN APP COMPONENT
-// ============================================================================
-
-export default function App() {
-  const [currentPage, setCurrentPage] = useState('home');
-  const [selectedPost, setSelectedPost] = useState(null);
-  const [selectedCategory, setSelectedCategory] = useState('all');
+// --- Context Simulé d'auth ---
+function useAuthSimu() {
   const [user, setUser] = useState(null);
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [firebaseReady, setFirebaseReady] = useState(false);
-  const [firebase, setFirebase] = useState(null);
+  const [checking, setChecking] = useState(true);
 
-  // Initialize Firebase
   useEffect(() => {
-    const init = async () => {
-      const fb = await initializeFirebase();
-      if (fb) {
-        setFirebase(fb);
-        setFirebaseReady(true);
-        
-        // Auth state listener
-        fb.onAuthStateChanged(auth, (user) => {
-          setUser(user);
-        });
-      }
-      setLoading(false);
-    };
-    init();
+    let unsub;
+    if (window.__initial_auth_token) {
+      signInWithEmailAndPassword(
+        auth,
+        window.__initial_auth_token.email,
+        window.__initial_auth_token.password
+      )
+        .then(({ user }) => setUser(user))
+        .catch(() => setUser(null))
+        .finally(() => setChecking(false));
+    } else {
+      unsub = onAuthStateChanged(auth, (u) => {
+        setUser(u);
+        setChecking(false);
+      });
+    }
+    return () => unsub && unsub();
   }, []);
+  return { user, checking };
+}
 
-  // Fetch posts
-  useEffect(() => {
-    if (firebaseReady && firebase) {
-      fetchPosts();
-    }
-  }, [firebaseReady, firebase]);
-
-  const fetchPosts = async () => {
-    if (!firebase || !window.__app_id) return;
-    try {
-      const postsRef = firebase.collection(firebase.db, `artifacts/${window.__app_id}/public/data/posts`);
-      const q = firebase.query(postsRef, firebase.orderBy('timestamp', 'desc'));
-      const snapshot = await firebase.getDocs(q);
-      const postsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setPosts(postsData);
-    } catch (error) {
-      console.error('Error fetching posts:', error);
-    }
-  };
-
-  const navigateTo = (page, post = null) => {
-    setCurrentPage(page);
-    setSelectedPost(post);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
+// --- Loader global ---
+function Loader({ text = "Chargement..." }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black text-white">
-      <Header 
-        currentPage={currentPage} 
-        navigateTo={navigateTo}
-        user={user}
-      />
-
-      <main className="relative">
-        {loading ? (
-          <LoadingScreen />
-        ) : currentPage === 'home' ? (
-          <HomePage 
-            posts={posts}
-            selectedCategory={selectedCategory}
-            setSelectedCategory={setSelectedCategory}
-            navigateTo={navigateTo}
-          />
-        ) : currentPage === 'post' ? (
-          <PostPage 
-            post={selectedPost}
-            navigateTo={navigateTo}
-            firebase={firebase}
-            firebaseReady={firebaseReady}
-          />
-        ) : currentPage === 'admin' ? (
-          <AdminPage 
-            user={user}
-            posts={posts}
-            firebase={firebase}
-            firebaseReady={firebaseReady}
-            fetchPosts={fetchPosts}
-            navigateTo={navigateTo}
-          />
-        ) : null}
-      </main>
-
-      <Footer />
+    <div className="loader-anim my-12">
+      <span className="dot"></span>
+      <span className="dot"></span>
+      <span className="dot"></span>
+      <span className="ml-4 text-lg text-[#bbb]">{text}</span>
     </div>
   );
 }
 
-// ============================================================================
-// HEADER COMPONENT
-// ============================================================================
-
-function Header({ currentPage, navigateTo, user }) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-
+// --- HEADER / NAV ---
+function Header({ onNavigate, page, isAdmin, onLogout }) {
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-xl border-b border-purple-500/20">
-      <nav className="container mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          {/* Logo */}
-          <div 
-            onClick={() => navigateTo('home')}
-            className="flex items-center space-x-3 cursor-pointer group"
-          >
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 blur-xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
-              <div className="relative bg-gradient-to-br from-purple-600 to-pink-600 p-3 rounded-xl transform group-hover:scale-110 transition-transform">
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-                </svg>
-              </div>
-            </div>
-            <div>
-              <h1 className="text-2xl font-black bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                BujaDevil
-              </h1>
-              <p className="text-xs text-gray-400 font-medium">La Crème du Gaming</p>
-            </div>
-          </div>
-
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-8">
-            <button
-              onClick={() => navigateTo('home')}
-              className={`font-semibold transition-all ${
-                currentPage === 'home' 
-                  ? 'text-purple-400 border-b-2 border-purple-400' 
-                  : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              Accueil
-            </button>
-            <button
-              onClick={() => navigateTo('admin')}
-              className={`font-semibold transition-all ${
-                currentPage === 'admin' 
-                  ? 'text-purple-400 border-b-2 border-purple-400' 
-                  : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              {user ? 'Dashboard' : 'Admin'}
-            </button>
-            {user && (
-              <div className="flex items-center space-x-2 bg-purple-600/20 px-4 py-2 rounded-full border border-purple-500/30">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-sm font-medium text-purple-300">Connecté</span>
-              </div>
-            )}
-          </div>
-
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="md:hidden text-white"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {isMenuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
+    <header className="sticky top-0 z-40 bg-[#101010]/90 blur-bg px-2 md:px-0 flex items-center justify-between h-20 border-b border-[#18181b] shadow-sm">
+      <div className="flex items-center">
+        <img src="/logo512.png" alt="logo" className="w-10 h-10 rounded-xl mr-3" />
+        <span className="text-2xl font-extrabold tracking-tight text-white select-none">
+          <span className="coca-red">Buja</span>Devil
+        </span>
+      </div>
+      <nav className="flex gap-2 md:gap-6 items-center">
+        <button
+          onClick={() => onNavigate("home")}
+          className={`font-semibold text-base py-1 px-3 rounded-full transition-colors ${page === "home" ? "bg-[#ff003c] text-white" : "hover:bg-[#232323] text-[#bbb]"}`}
+        >
+          Accueil
+        </button>
+        {isAdmin ?
+          <button onClick={() => onNavigate("admin")}
+            className={`font-semibold text-base py-1 px-3 rounded-full transition-colors ${page === "admin" ? "bg-[#07f8ff] text-black" : "hover:bg-[#232323] text-[#bbb]"}`}>
+            Admin
           </button>
-        </div>
-
-        {/* Mobile Menu */}
-        {isMenuOpen && (
-          <div className="md:hidden mt-4 py-4 border-t border-purple-500/20 space-y-3">
-            <button
-              onClick={() => { navigateTo('home'); setIsMenuOpen(false); }}
-              className="block w-full text-left px-4 py-2 rounded-lg hover:bg-purple-600/20 transition-colors"
-            >
-              Accueil
-            </button>
-            <button
-              onClick={() => { navigateTo('admin'); setIsMenuOpen(false); }}
-              className="block w-full text-left px-4 py-2 rounded-lg hover:bg-purple-600/20 transition-colors"
-            >
-              {user ? 'Dashboard' : 'Admin'}
-            </button>
-          </div>
-        )}
+        : null}
+        <a
+          href="https://github.com/josueraoult/buja-devil-blog"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#bbb] hover:text-[#ff003c] font-semibold text-sm"
+        >
+          GitHub
+        </a>
+        {isAdmin && onLogout &&
+          <button onClick={onLogout} className="ml-3 btn">Déconnexion</button>
+        }
       </nav>
     </header>
   );
 }
 
-// ============================================================================
-// HOME PAGE COMPONENT
-// ============================================================================
-
-function HomePage({ posts, selectedCategory, setSelectedCategory, navigateTo }) {
-  const categories = [
-    { id: 'all', name: 'Tous', icon: '🎮' },
-    { id: 'news-game', name: 'News Game', icon: '🎯' },
-    { id: 'app-download', name: 'App Download', icon: '📱' },
-    { id: 'football-news', name: 'Football News', icon: '⚽' },
-    { id: 'tutorial', name: 'Tutorial', icon: '📚' }
-  ];
-
-  const filteredPosts = selectedCategory === 'all' 
-    ? posts 
-    : posts.filter(post => post.category === selectedCategory);
-
+// --- HOMEPAGE (Liste des articles) ---
+function HomePage({ posts, onOpenPost, filter, setFilter }) {
   return (
-    <div className="pt-24 pb-16">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden mb-16">
-        <div className="absolute inset-0 bg-gradient-to-r from-purple-900/30 via-pink-900/30 to-purple-900/30"></div>
-        <div className="absolute inset-0">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-600/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        </div>
-        
-        <div className="container mx-auto px-4 py-20 relative z-10">
-          <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-5xl md:text-7xl font-black mb-6 leading-tight">
-              <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent animate-gradient">
-                La Crème du Gaming
-              </span>
-            </h1>
-            <p className="text-xl md:text-2xl text-gray-300 mb-8 leading-relaxed">
-              Découvrez les dernières actualités gaming, tutoriels exclusifs et téléchargements d'applications. Votre source #1 pour tout ce qui touche au gaming moderne.
-            </p>
-            <div className="flex flex-wrap justify-center gap-4">
-              <div className="bg-white/5 backdrop-blur-sm px-6 py-3 rounded-full border border-white/10">
-                <span className="text-purple-400 font-bold">{posts.length}+</span>
-                <span className="text-gray-400 ml-2">Articles</span>
-              </div>
-              <div className="bg-white/5 backdrop-blur-sm px-6 py-3 rounded-full border border-white/10">
-                <span className="text-pink-400 font-bold">100%</span>
-                <span className="text-gray-400 ml-2">Gratuit</span>
-              </div>
-              <div className="bg-white/5 backdrop-blur-sm px-6 py-3 rounded-full border border-white/10">
-                <span className="text-purple-400 font-bold">24/7</span>
-                <span className="text-gray-400 ml-2">Mis à jour</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Categories */}
-      <section className="container mx-auto px-4 mb-12">
-        <div className="flex flex-wrap justify-center gap-3">
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`px-6 py-3 rounded-full font-semibold transition-all transform hover:scale-105 ${
-                selectedCategory === cat.id
-                  ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50'
-                  : 'bg-white/5 text-gray-300 hover:bg-white/10 border border-white/10'
-              }`}
-            >
-              <span className="mr-2">{cat.icon}</span>
-              {cat.name}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Posts Grid */}
-      <section className="container mx-auto px-4">
-        {filteredPosts.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="inline-block p-8 bg-white/5 rounded-2xl border border-white/10">
-              <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-              <h3 className="text-2xl font-bold text-gray-400 mb-2">Aucun article</h3>
-              <p className="text-gray-500">Aucun article dans cette catégorie pour le moment.</p>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredPosts.map(post => (
-              <PostCard key={post.id} post={post} navigateTo={navigateTo} />
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-// ============================================================================
-// POST CARD COMPONENT
-// ============================================================================
-
-function PostCard({ post, navigateTo }) {
-  const getCategoryIcon = (category) => {
-    const icons = {
-      'news-game': '🎯',
-      'app-download': '📱',
-      'football-news': '⚽',
-      'tutorial': '📚'
-    };
-    return icons[category] || '🎮';
-  };
-
-  const getCategoryColor = (category) => {
-    const colors = {
-      'news-game': 'from-purple-500 to-pink-500',
-      'app-download': 'from-blue-500 to-cyan-500',
-      'football-news': 'from-green-500 to-emerald-500',
-      'tutorial': 'from-orange-500 to-red-500'
-    };
-    return colors[category] || 'from-purple-500 to-pink-500';
-  };
-
-  const formatDate = (timestamp) => {
-    if (!timestamp) return '';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return new Intl.DateTimeFormat('fr-FR', { 
-      day: 'numeric', 
-      month: 'long', 
-      year: 'numeric' 
-    }).format(date);
-  };
-
-  return (
-    <article 
-      onClick={() => navigateTo('post', post)}
-      className="group cursor-pointer bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl overflow-hidden border border-white/10 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-[1.02] hover:shadow-2xl hover:shadow-purple-500/20"
-    >
-      {/* Image */}
-      <div className="relative h-56 overflow-hidden bg-gradient-to-br from-purple-900/50 to-pink-900/50">
-        {post.imageUrl ? (
-          <>
-            <img 
-              src={post.imageUrl} 
-              alt={post.title}
-              className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
-          </>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <svg className="w-20 h-20 text-white/20" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-            </svg>
-          </div>
-        )}
-        
-        {/* Category Badge */}
-        <div className="absolute top-4 left-4">
-          <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-bold bg-gradient-to-r ${getCategoryColor(post.category)} text-white shadow-lg`}>
-            <span className="mr-2">{getCategoryIcon(post.category)}</span>
-            {post.category}
-          </span>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="p-6">
-        <div className="flex items-center text-sm text-gray-400 mb-3">
-          <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-          </svg>
-          {formatDate(post.timestamp)}
-        </div>
-
-        <h3 className="text-xl font-bold mb-3 text-white group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-400 group-hover:to-pink-400 group-hover:bg-clip-text transition-all">
-          {post.title}
-        </h3>
-
-        <p className="text-gray-400 line-clamp-3 mb-4 leading-relaxed">
-          {post.content.substring(0, 150)}...
-        </p>
-
-        <div className="flex items-center justify-between">
-          <span className="text-purple-400 font-semibold flex items-center group-hover:translate-x-2 transition-transform">
-            Lire l'article
-            <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
-          </span>
-          
-          {post.videoUrl && (
-            <div className="flex items-center text-sm text-gray-400">
-              <svg className="w-5 h-5 mr-1 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
-              </svg>
-              Vidéo
-            </div>
-          )}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-// ============================================================================
-// POST PAGE COMPONENT
-// ============================================================================
-
-function PostPage({ post, navigateTo, firebase, firebaseReady }) {
-  const [comments, setComments] = useState([]);
-  const [newComment, setNewComment] = useState({ name: '', text: '' });
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (firebaseReady && firebase && post) {
-      fetchComments();
-    }
-  }, [firebaseReady, firebase, post]);
-
-  const fetchComments = async () => {
-    if (!firebase || !window.__app_id || !post) return;
-    try {
-      const commentsRef = firebase.collection(firebase.db, `artifacts/${window.__app_id}/public/data/comments`);
-      const q = firebase.query(commentsRef, firebase.where('postId', '==', post.id), firebase.orderBy('timestamp', 'desc'));
-      const snapshot = await firebase.getDocs(q);
-      const commentsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setComments(commentsData);
-    } catch (error) {
-      console.error('Error fetching comments:', error);
-    }
-  };
-
-  const handleSubmitComment = async (e) => {
-    e.preventDefault();
-    if (!newComment.name || !newComment.text || !firebase || !window.__app_id) return;
-
-    setSubmitting(true);
-    try {
-      const commentsRef = firebase.collection(firebase.db, `artifacts/${window.__app_id}/public/data/comments`);
-      await firebase.addDoc(commentsRef, {
-        postId: post.id,
-        name: newComment.name,
-        text: newComment.text,
-        timestamp: firebase.Timestamp.now()
-      });
-      setNewComment({ name: '', text: '' });
-      await fetchComments();
-    } catch (error) {
-      console.error('Error adding comment:', error);
-      alert('Erreur lors de l\'ajout du commentaire');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const formatDate = (timestamp) => {
-    if (!timestamp) return '';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return new Intl.DateTimeFormat('fr-FR', { 
-      day: 'numeric', 
-      month: 'long', 
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
-  };
-
-  if (!post) return null;
-
-  return (
-    <div className="pt-24 pb-16">
-      <div className="container mx-auto px-4 max-w-4xl">
-        {/* Back Button */}
+    <main className="max-w-5xl mx-auto py-8 px-2 fade-in">
+      <h1 className="text-4xl md:text-5xl font-black mb-2 text-shadow">
+        La Crème Du Gaming
+      </h1>
+      <p className="text-[#bbb] mb-8 text-lg max-w-2xl">
+        Les dernières actus, tutos, téléchargements & news football. Powered by <b>React</b>.
+      </p>
+      <div className="flex flex-wrap gap-3 mb-5">
         <button
-          onClick={() => navigateTo('home')}
-          className="flex items-center text-purple-400 hover:text-purple-300 mb-8 transition-colors group"
-        >
-          <svg className="w-5 h-5 mr-2 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Retour aux articles
+          onClick={() => setFilter("")}
+          className={`btn ${filter === "" ? "bg-[#ff003c] text-white" : "bg-[#232323] text-[#bbb]"}`}>
+          Toutes catégories
         </button>
-
-        {/* Article Header */}
-        <article className="bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl overflow-hidden border border-white/10 mb-8">
-          {/* Featured Image */}
-          {post.imageUrl && (
-            <div className="relative h-96 overflow-hidden">
-              <img 
-                src={post.imageUrl} 
-                alt={post.title}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
-            </div>
-          )}
-
-          <div className="p-8">
-            {/* Category & Date */}
-            <div className="flex items-center justify-between mb-6">
-              <span className="inline-flex items-center px-4 py-2 rounded-full text-sm font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white">
-                {post.category}
-              </span>
-              <div className="flex items-center text-gray-400">
-                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-                </svg>
-                {formatDate(post.timestamp)}
-              </div>
-            </div>
-
-            {/* Title */}
-            <h1 className="text-4xl md:text-5xl font-black mb-6 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent leading-tight">
-              {post.title}
-            </h1>
-
-            {/* Content */}
-            <div className="prose prose-invert prose-lg max-w-none mb-8">
-              <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">
-                {post.content}
-              </p>
-            </div>
-
-            {/* Video */}
-            {post.videoUrl && (
-              <div className="mb-8 rounded-xl overflow-hidden">
-                <div className="relative pb-[56.25%]">
-                  <iframe
-                    src={post.videoUrl.replace('watch?v=', 'embed/')}
-                    className="absolute top-0 left-0 w-full h-full"
-                    frameBorder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  ></iframe>
-                </div>
-              </div>
-            )}
-
-            {/* Download Link */}
-            {post.downloadUrl && (
-              <a
-                href={post.downloadUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all transform hover:scale-105"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Télécharger le fichier
-              </a>
-            )}
-          </div>
-        </article>
-
-        {/* Comments Section */}
-        <div className="bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl p-8 border border-white/10">
-          <h2 className="text-3xl font-bold mb-6 flex items-center">
-            <svg className="w-8 h-8 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-            </svg>
-            Commentaires ({comments.length})
-          </h2>
-
-          {/* Comment Form */}
-          <form onSubmit={handleSubmitComment} className="mb-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <input
-                type="text"
-                placeholder="Votre nom"
-                value={newComment.name}
-                onChange={(e) => setNewComment({ ...newComment, name: e.target.value })}
-                className="px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors"
-                required
-              />
-            </div>
-            <textarea
-              placeholder="Votre commentaire..."
-              value={newComment.text}
-              onChange={(e) => setNewComment({ ...newComment, text: e.target.value })}
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors mb-4 min-h-[120px]"
-              required
-            ></textarea>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {submitting ? 'Publication...' : 'Publier le commentaire'}
-            </button>
-          </form>
-
-          {/* Comments List */}
-          <div className="space-y-6">
-            {comments.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
-                <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                <p>Aucun commentaire pour le moment. Soyez le premier à commenter !</p>
-              </div>
-            ) : (
-              comments.map(comment => (
-                <div key={comment.id} className="bg-white/5 rounded-xl p-6 border border-white/10">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mr-3">
-                        <span className="font-bold text-lg">{comment.name.charAt(0).toUpperCase()}</span>
-                      </div>
-                      <div>
-                        <p className="font-semibold">{comment.name}</p>
-                        <p className="text-sm text-gray-400">{formatDate(comment.timestamp)}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-gray-300 leading-relaxed">{comment.text}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// ADMIN PAGE COMPONENT
-// ============================================================================
-
-function AdminPage({ user, posts, firebase, firebaseReady, fetchPosts, navigateTo }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPostForm, setShowPostForm] = useState(false);
-  const [logging, setLogging] = useState(false);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    if (!firebase) return;
-
-    setLogging(true);
-    try {
-      await firebase.signInWithEmailAndPassword(firebase.auth, email, password);
-      setEmail('');
-      setPassword('');
-    } catch (error) {
-      console.error('Login error:', error);
-      alert('Erreur de connexion: ' + error.message);
-    } finally {
-      setLogging(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    if (!firebase) return;
-    try {
-      await firebase.signOut(firebase.auth);
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
-  if (!user) {
-    return (
-      <div className="pt-24 pb-16 min-h-screen flex items-center justify-center">
-        <div className="container mx-auto px-4 max-w-md">
-          <div className="bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl p-8 border border-white/10">
-            <div className="text-center mb-8">
-              <div className="inline-block p-4 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl mb-4">
-                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              </div>
-              <h2 className="text-3xl font-bold mb-2">Connexion Admin</h2>
-              <p className="text-gray-400">Accédez au panneau d'administration</p>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2 text-gray-300">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors"
-                  placeholder="admin@bujadevil.com"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2 text-gray-300">Mot de passe</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors"
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={logging}
-                className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {logging ? 'Connexion...' : 'Se connecter'}
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="pt-24 pb-16">
-      <div className="container mx-auto px-4 max-w-6xl">
-        {/* Admin Header */}
-        <div className="bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl p-8 border border-white/10 mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Tableau de bord Admin
-              </h1>
-              <p className="text-gray-400">Gérez vos articles et contenus</p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="px-6 py-3 bg-red-600 hover:bg-red-700 rounded-xl font-semibold transition-colors"
-            >
-              Déconnexion
-            </button>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        {CATEGORIES.map((cat) => (
           <button
-            onClick={() => setShowPostForm(!showPostForm)}
-            className="p-6 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all transform hover:scale-105"
-          >
-            <svg className="w-8 h-8 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            {showPostForm ? 'Fermer le formulaire' : 'Nouvel Article'}
+            key={cat}
+            onClick={() => setFilter(cat)}
+            className={`btn ${filter === cat ? "bg-[#07f8ff] text-black" : "bg-[#18181b] text-[#bbb]"}`}>
+            {cat}
           </button>
+        ))}
+      </div>
+      <section className="grid-autofill">
+        {posts.length === 0 ? (
+          <div className="text-[#bbb] col-span-2 text-xl mt-8">Aucun article disponible.</div>
+        ) : posts.map((post) => (
+          <PostCard key={post.id} post={post} onClick={() => onOpenPost(post)} />
+        ))}
+      </section>
+    </main>
+  );
+}
 
-          <div className="p-6 bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl border border-white/10 text-center">
-            <div className="text-4xl font-bold text-purple-400 mb-1">{posts.length}</div>
-            <div className="text-gray-400">Articles publiés</div>
-          </div>
-
-          <div className="p-6 bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl border border-white/10 text-center">
-            <div className="text-4xl font-bold text-pink-400 mb-1">✓</div>
-            <div className="text-gray-400">Système actif</div>
-          </div>
-        </div>
-
-        {/* Post Form */}
-        {showPostForm && (
-          <PostForm 
-            firebase={firebase} 
-            firebaseReady={firebaseReady}
-            onSuccess={() => {
-              setShowPostForm(false);
-              fetchPosts();
-            }}
-          />
-        )}
-
-        {/* Posts List */}
-        <AdminDashboard 
-          posts={posts} 
-          firebase={firebase}
-          firebaseReady={firebaseReady}
-          fetchPosts={fetchPosts}
-          navigateTo={navigateTo}
-        />
+// --- POSTCARD (Aperçu article) ---
+function PostCard({ post, onClick }) {
+  return (
+    <div className="card cursor-pointer hover:scale-[1.025] transition-all fade-in" onClick={onClick}>
+      {post.thumbnailUrl && (
+        <img src={post.thumbnailUrl} alt="" className="w-full h-48 object-cover rounded-xl mb-3" loading="lazy" />
+      )}
+      <div className="flex gap-2 mb-1">
+        <span className="px-3 py-1 bg-[#232323] rounded-full text-xs font-bold uppercase text-[#07f8ff]">{post.category}</span>
+        <span className="px-3 py-1 bg-[#232323] rounded-full text-xs text-[#bbb]">{formatDate(post.publishedAt)}</span>
+      </div>
+      <h2 className="text-xl font-extrabold mt-1 mb-0.5">{post.title}</h2>
+      <p className="text-[#bbb] text-base line-clamp-3">{post.content?.slice(0, 140)}{post.content?.length > 140 ? "..." : ""}</p>
+      <div className="flex items-center mt-3 text-sm text-[#888]">
+        <span className="font-semibold">{post.author || "BujaDevil"}</span>
       </div>
     </div>
   );
 }
 
-// ============================================================================
-// POST FORM COMPONENT
-// ============================================================================
+// --- POSTPAGE (Lecture article + commentaires) ---
+function PostPage({ post, onBack }) {
+  return (
+    <main className="max-w-3xl mx-auto py-8 px-2 fade-in">
+      <button onClick={onBack} className="btn mb-4">&larr; Retour</button>
+      {post.thumbnailUrl && (
+        <img src={post.thumbnailUrl} alt="" className="w-full rounded-2xl mb-6 shadow-lg" />
+      )}
+      <div className="flex flex-wrap gap-2 mb-2">
+        <span className="px-3 py-1 bg-[#232323] rounded-full text-xs font-bold uppercase text-[#ff003c]">{post.category}</span>
+        <span className="px-3 py-1 bg-[#232323] rounded-full text-xs text-[#bbb]">{formatDate(post.publishedAt)}</span>
+      </div>
+      <h1 className="text-4xl font-black mb-2 text-shadow">{post.title}</h1>
+      <div className="text-[#bbb] mb-6 whitespace-pre-line">{post.content}</div>
+      {post.videoUrl && (
+        <div className="mb-6">
+          <iframe
+            src={post.videoUrl.replace("watch?v=", "embed/")}
+            title="Vidéo"
+            className="w-full aspect-video rounded-xl"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          ></iframe>
+        </div>
+      )}
+      {post.downloadUrl &&
+        <a href={post.downloadUrl} target="_blank" rel="noopener noreferrer"
+          className="btn mb-6 block w-max">Télécharger le fichier</a>
+      }
+      <CommentSection postId={post.id} />
+    </main>
+  );
+}
 
-function PostForm({ firebase, firebaseReady, onSuccess }) {
-  const [formData, setFormData] = useState({
-    title: '',
-    content: '',
-    category: 'news-game',
-    videoUrl: '',
-  });
-  const [imageFile, setImageFile] = useState(null);
-  const [downloadFile, setDownloadFile] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
+// --- COMMENTAIRES ---
+function CommentSection({ postId }) {
+  const [comments, setComments] = useState([]);
+  const [input, setInput] = useState({ author: "", text: "" });
+  const [loading, setLoading] = useState(true);
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState("");
 
+  // Charger commentaires
+  useEffect(() => {
+    setLoading(true);
+    getDocs(query(collection(db, commentsPath), where("postId", "==", postId), orderBy("createdAt", "desc")))
+      .then(snapshot => setComments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))))
+      .finally(() => setLoading(false));
+  }, [postId]);
+
+  // Post commentaire
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!firebase || !window.__app_id) return;
-
-    setSubmitting(true);
+    setError("");
+    if (!input.author || !input.text) return setError("Remplis tous les champs !");
+    setPosting(true);
     try {
-      let imageUrl = '';
-      let downloadUrl = '';
-
-      // Upload image
-      if (imageFile) {
-        const imageRef = firebase.ref(firebase.storage, `artifacts/${window.__app_id}/images/${Date.now()}_${imageFile.name}`);
-        await firebase.uploadBytes(imageRef, imageFile);
-        imageUrl = await firebase.getDownloadURL(imageRef);
-      }
-
-      // Upload download file
-      if (downloadFile) {
-        const fileRef = firebase.ref(firebase.storage, `artifacts/${window.__app_id}/files/${Date.now()}_${downloadFile.name}`);
-        await firebase.uploadBytes(fileRef, downloadFile);
-        downloadUrl = await firebase.getDownloadURL(fileRef);
-      }
-
-      // Add post to Firestore
-      const postsRef = firebase.collection(firebase.db, `artifacts/${window.__app_id}/public/data/posts`);
-      await firebase.addDoc(postsRef, {
-        ...formData,
-        imageUrl,
-        downloadUrl,
-        timestamp: firebase.Timestamp.now()
+      await addDoc(collection(db, commentsPath), {
+        ...input,
+        postId,
+        createdAt: serverTimestamp(),
       });
-
-      // Reset form
-      setFormData({ title: '', content: '', category: 'news-game', videoUrl: '' });
-      setImageFile(null);
-      setDownloadFile(null);
-      alert('Article publié avec succès !');
-      onSuccess();
-    } catch (error) {
-      console.error('Error creating post:', error);
-      alert('Erreur lors de la création de l\'article');
-    } finally {
-      setSubmitting(false);
+      setInput({ author: "", text: "" });
+      setComments([{ author: input.author, text: input.text, createdAt: new Date() }, ...comments]);
+    } catch {
+      setError("Erreur lors de l'envoi.");
     }
+    setPosting(false);
   };
 
   return (
-    <div className="bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl p-8 border border-white/10 mb-8">
-      <h2 className="text-2xl font-bold mb-6 flex items-center">
-        <svg className="w-7 h-7 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-        </svg>
-        Créer un nouvel article
-      </h2>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div>
-          <label className="block text-sm font-medium mb-2 text-gray-300">Titre de l'article</label>
-          <input
-            type="text"
-            value={formData.title}
-            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors"
-            placeholder="Ex: GTA 6 - Nouvelle bande-annonce"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2 text-gray-300">Catégorie</label>
-          <select
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors"
-          >
-            <option value="news-game">🎯 News Game</option>
-            <option value="app-download">📱 App Download</option>
-            <option value="football-news">⚽ Football News</option>
-            <option value="tutorial">📚 Tutorial</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2 text-gray-300">Contenu de l'article</label>
-          <textarea
-            value={formData.content}
-            onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors min-h-[200px]"
-            placeholder="Rédigez votre article ici..."
-            required
-          ></textarea>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Image principale</label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setImageFile(e.target.files[0])}
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-purple-600 file:text-white file:cursor-pointer"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-300">Fichier à télécharger (optionnel)</label>
-            <input
-              type="file"
-              onChange={(e) => setDownloadFile(e.target.files[0])}
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-pink-600 file:text-white file:cursor-pointer"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2 text-gray-300">URL de la vidéo YouTube (optionnel)</label>
-          <input
-            type="url"
-            value={formData.videoUrl}
-            onChange={(e) => setFormData({ ...formData, videoUrl: e.target.value })}
-            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500 transition-colors"
-            placeholder="https://www.youtube.com/watch?v=..."
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-semibold text-lg hover:shadow-lg hover:shadow-purple-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {submitting ? 'Publication en cours...' : 'Publier l\'article'}
-        </button>
+    <section className="mt-12 fade-in">
+      <h3 className="text-xl font-extrabold mb-2">Commentaires</h3>
+      <form className="flex flex-col md:flex-row gap-3 mb-5" onSubmit={handleSubmit}>
+        <input
+          className="flex-1"
+          placeholder="Votre nom/pseudo"
+          value={input.author}
+          maxLength={32}
+          onChange={e => setInput(i => ({ ...i, author: e.target.value }))}
+        />
+        <input
+          className="flex-[2]"
+          placeholder="Votre commentaire"
+          value={input.text}
+          maxLength={500}
+          onChange={e => setInput(i => ({ ...i, text: e.target.value }))}
+        />
+        <button className="btn" type="submit" disabled={posting}>{posting ? "..." : "Envoyer"}</button>
       </form>
-    </div>
-  );
-}
-
-// ============================================================================
-// ADMIN DASHBOARD COMPONENT
-// ============================================================================
-
-function AdminDashboard({ posts, firebase, firebaseReady, fetchPosts, navigateTo }) {
-  const handleDelete = async (postId) => {
-    if (!window.confirm('Êtes-vous sûr de vouloir supprimer cet article ?')) return;
-    if (!firebase || !window.__app_id) return;
-
-    try {
-      const postRef = firebase.doc(firebase.db, `artifacts/${window.__app_id}/public/data/posts`, postId);
-      await firebase.deleteDoc(postRef);
-      await fetchPosts();
-      alert('Article supprimé avec succès');
-    } catch (error) {
-      console.error('Error deleting post:', error);
-      alert('Erreur lors de la suppression');
-    }
-  };
-
-  return (
-    <div className="bg-gradient-to-br from-white/5 to-white/[0.02] rounded-2xl p-8 border border-white/10">
-      <h2 className="text-2xl font-bold mb-6 flex items-center">
-        <svg className="w-7 h-7 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-        Gestion des articles
-      </h2>
-
-      {posts.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <p className="text-xl">Aucun article publié</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {posts.map(post => (
-            <div key={post.id} className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/10 hover:border-purple-500/50 transition-colors">
-              <div className="flex items-center flex-1">
-                {post.imageUrl && (
-                  <img 
-                    src={post.imageUrl} 
-                    alt={post.title}
-                    className="w-16 h-16 object-cover rounded-lg mr-4"
-                  />
-                )}
-                <div className="flex-1">
-                  <h3 className="font-semibold text-lg mb-1">{post.title}</h3>
-                  <div className="flex items-center space-x-3 text-sm text-gray-400">
-                    <span className="px-2 py-1 bg-purple-600/20 rounded-full text-purple-400">
-                      {post.category}
-                    </span>
-                    <span>{new Date(post.timestamp?.toDate()).toLocaleDateString('fr-FR')}</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => navigateTo('post', post)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
-                >
-                  Voir
-                </button>
-                <button
-                  onClick={() => handleDelete(post.id)}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-medium transition-colors"
-                >
-                  Supprimer
-                </button>
-              </div>
+      {error && <div className="text-[#ff003c] mb-3">{error}</div>}
+      {loading ? <Loader text="Chargement des commentaires..." /> : (
+        <div>
+          {comments.length === 0 && <div className="text-[#bbb]">Aucun commentaire pour l’instant.</div>}
+          {comments.map((c, i) => (
+            <div key={i} className="comment fade-in">
+              <span className="comment-author">{c.author}</span>
+              <span className="comment-date">{formatDate(c.createdAt)}</span>
+              <div className="comment-body">{c.text}</div>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
-// ============================================================================
-// FOOTER COMPONENT
-// ============================================================================
+// --- FORMULAIRE POST (Création / Edition) ---
+function PostForm({ onSave, initial = {}, uploading, onCancel }) {
+  const [data, setData] = useState({
+    title: initial.title || "",
+    content: initial.content || "",
+    category: initial.category || CATEGORIES[0],
+    videoUrl: initial.videoUrl || "",
+    author: initial.author || "",
+    publishedAt: initial.publishedAt || new Date(),
+    thumbnailUrl: initial.thumbnailUrl || "",
+    downloadUrl: initial.downloadUrl || "",
+    id: initial.id || null,
+  });
+  const [thumbnail, setThumbnail] = useState(null);
+  const [downloadFile, setDownloadFile] = useState(null);
 
-function Footer() {
+  // Prévisualisation image
+  const handleThumbChange = (e) => {
+    setThumbnail(e.target.files[0]);
+  };
+
+  const handleDownloadChange = (e) => {
+    setDownloadFile(e.target.files[0]);
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setData(d => ({ ...d, [name]: value }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(data, thumbnail, downloadFile);
+  };
+
   return (
-    <footer className="relative border-t border-white/10 bg-black/50 backdrop-blur-xl mt-16">
-      <div className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-          <div>
-            <h3 className="text-xl font-bold mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              BujaDevil
-            </h3>
-            <p className="text-gray-400 leading-relaxed">
-              Votre source #1 pour les actualités gaming, tutoriels et téléchargements d'applications. Restez connecté avec la crème du gaming.
-            </p>
-          </div>
-          
-          <div>
-            <h4 className="font-semibold mb-4 text-purple-400">Navigation</h4>
-            <ul className="space-y-2 text-gray-400">
-              <li><a href="#" className="hover:text-white transition-colors">Accueil</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">News Game</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">App Download</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Football News</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">Tutoriels</a></li>
-            </ul>
-          </div>
-          
-          <div>
-            <h4 className="font-semibold mb-4 text-purple-400">Suivez-nous</h4>
-            <div className="flex space-x-3">
-              <a href="#" className="w-10 h-10 bg-white/5 hover:bg-purple-600/20 border border-white/10 rounded-full flex items-center justify-center transition-all transform hover:scale-110">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                </svg>
-              </a>
-              <a href="#" className="w-10 h-10 bg-white/5 hover:bg-purple-600/20 border border-white/10 rounded-full flex items-center justify-center transition-all transform hover:scale-110">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
-                </svg>
-              </a>
-              <a href="#" className="w-10 h-10 bg-white/5 hover:bg-purple-600/20 border border-white/10 rounded-full flex items-center justify-center transition-all transform hover:scale-110">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678c-3.405 0-6.162 2.76-6.162 6.162 0 3.405 2.76 6.162 6.162 6.162 3.405 0 6.162-2.76 6.162-6.162 0-3.405-2.76-6.162-6.162-6.162zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/>
-                </svg>
-              </a>
-            </div>
-          </div>
-        </div>
-        
-        <div className="border-t border-white/10 pt-8 text-center text-gray-400">
-          <p>&copy; 2025 BujaDevil - La Crème du Gaming. Tous droits réservés.</p>
-          <p className="mt-2 text-sm">Créé avec 🔥 par Josué</p>
-        </div>
+    <form className="card max-w-2xl mx-auto fade-in" onSubmit={handleSubmit}>
+      <h2 className="text-2xl font-bold mb-4">{data.id ? "Modifier l'article" : "Nouvel article"}</h2>
+      <label>Titre</label>
+      <input name="title" value={data.title} onChange={handleChange} maxLength={80} required />
+      <label>Contenu</label>
+      <textarea name="content" value={data.content} onChange={handleChange} rows={7} required />
+      <label>Catégorie</label>
+      <select name="category" value={data.category} onChange={handleChange}>
+        {CATEGORIES.map(cat => <option key={cat}>{cat}</option>)}
+      </select>
+      <label>Lien Vidéo (YouTube, optionnel)</label>
+      <input name="videoUrl" value={data.videoUrl} onChange={handleChange} placeholder="https://youtube.com/..." />
+      <label>Auteur</label>
+      <input name="author" value={data.author} onChange={handleChange} maxLength={32} placeholder="Francis Uliel" />
+      <label>Date de publication</label>
+      <input name="publishedAt" type="datetime-local"
+        value={typeof data.publishedAt === "string"
+          ? data.publishedAt.slice(0, 16)
+          : new Date(data.publishedAt).toISOString().slice(0, 16)}
+        onChange={e => setData(d => ({ ...d, publishedAt: e.target.value }))}
+        required
+      />
+      <label>Image/thumbnail</label>
+      <input type="file" accept="image/*" onChange={handleThumbChange} />
+      {data.thumbnailUrl && (
+        <img src={data.thumbnailUrl} alt="Miniature" className="w-44 h-28 rounded-xl mb-2 mt-2 object-cover" />
+      )}
+      <label>Fichier à télécharger (optionnel)</label>
+      <input type="file" onChange={handleDownloadChange} />
+      {data.downloadUrl && (
+        <a href={data.downloadUrl} target="_blank" rel="noopener noreferrer" className="btn my-2">Voir le fichier</a>
+      )}
+      <div className="flex gap-3 mt-4">
+        <button className="btn" type="submit" disabled={uploading}>{uploading ? "..." : "Enregistrer"}</button>
+        {onCancel && <button className="btn bg-[#18181b] text-[#bbb]" type="button" onClick={onCancel}>Annuler</button>}
       </div>
-    </footer>
+    </form>
   );
 }
 
-// ============================================================================
-// LOADING SCREEN COMPONENT
-// ============================================================================
-
-function LoadingScreen() {
+// --- LOGIN ADMIN ---
+function Login({ onLogin, loading, error }) {
+  const [input, setInput] = useState({ email: "", password: "" });
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setInput(i => ({ ...i, [name]: value }));
+  };
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onLogin(input.email, input.password);
+  };
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-gray-950 via-gray-900 to-black">
-      <div className="text-center">
-        <div className="relative inline-block">
-          <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 blur-2xl opacity-50 animate-pulse"></div>
-          <div className="relative bg-gradient-to-br from-purple-600 to-pink-600 p-8 rounded-3xl animate-bounce">
-            <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-            </svg>
-          </div>
-        </div>
-        <h2 className="text-2xl font-bold mt-8 mb-2 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-          BujaDevil
-        </h2>
-        <p className="text-gray-400 animate-pulse">Chargement en cours...</p>
-      </div>
-    </div>
+    <form onSubmit={handleSubmit} className="card max-w-sm mx-auto my-24 fade-in">
+      <h2 className="text-2xl font-bold mb-4">Admin Login</h2>
+      <label>Email</label>
+      <input name="email" value={input.email} onChange={handleChange} type="email" required autoFocus />
+      <label>Mot de passe</label>
+      <input name="password" value={input.password} onChange={handleChange} type="password" required />
+      {error && <div className="text-[#ff003c] mb-2">{error}</div>}
+      <button className="btn mt-4 w-full" type="submit" disabled={loading}>{loading ? "..." : "Connexion"}</button>
+    </form>
   );
+}
+
+// --- ADMIN DASHBOARD (Liste Posts + Edition/Supp) ---
+function AdminDashboard({ posts, onEdit, onDelete, onAdd }) {
+  return (
+    <section className="max-w-5xl mx-auto py-8 px-2 fade-in">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-black">Panel Admin</h1>
+        <button className="btn" onClick={onAdd}>+ Nouvel Article</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-[#f6f6f6] bg-[#18181b] rounded-2xl shadow">
+          <thead>
+            <tr>
+              <th className="py-3 px-2 text-left">Titre</th>
+              <th className="py-3 px-2">Catégorie</th>
+              <th className="py-3 px-2">Publication</th>
+              <th className="py-3 px-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {posts.map(post => (
+              <tr key={post.id} className="border-b border-[#232323] hover:bg-[#232323]">
+                <td className="py-2 px-2">{post.title}</td>
+                <td className="py-2 px-2">{post.category}</td>
+                <td className="py-2 px-2">{formatDate(post.publishedAt)}</td>
+                <td className="py-2 px-2 flex gap-2">
+                  <button className="btn bg-[#07f8ff] text-black px-3 py-1" onClick={() => onEdit(post)}>Éditer</button>
+                  <button className="btn bg-[#ff003c] text-white px-3 py-1" onClick={() => onDelete(post)}>Supprimer</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {posts.length === 0 && <div className="text-[#bbb] mt-6">Aucun article.</div>}
+      </div>
+    </section>
+  );
+}
+
+// --- ADMIN PAGE (auth + dashboard + formulaire) ---
+function AdminPage({ user, onLogout }) {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Charger posts
+  const refreshPosts = () => {
+    setLoading(true);
+    getDocs(query(collection(db, postsPath), orderBy("publishedAt", "desc")))
+      .then(snapshot => setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { refreshPosts(); }, []);
+
+  // Connexion
+  const handleLogin = (email, password) => {
+    setAuthLoading(true);
+    setLoginError("");
+    signInWithEmailAndPassword(auth, email, password)
+      .catch(() => setLoginError("Email/mot de passe incorrect"))
+      .finally(() => setAuthLoading(false));
+  };
+
+  // Sauver (création/édition)
+  const handleSave = async (data, thumbnail, downloadFile) => {
+    setUploading(true);
+    let thumbnailUrl = data.thumbnailUrl;
+    let downloadUrl = data.downloadUrl;
+
+    // Upload image thumbnail
+    if (thumbnail) {
+      const imgRef = storageRef(storage, `${postsPath}/${Date.now()}_${thumbnail.name}`);
+      await uploadBytes(imgRef, thumbnail);
+      thumbnailUrl = await getDownloadURL(imgRef);
+      if (data.thumbnailUrl && data.thumbnailUrl.startsWith("https://")) {
+        // Supprime ancienne miniature si existante
+        try {
+          const old = storageRef(storage, data.thumbnailUrl);
+          await deleteObject(old);
+        } catch { }
+      }
     }
+
+    // Upload fichier à télécharger
+    if (downloadFile) {
+      const dlRef = storageRef(storage, `${postsPath}/download_${Date.now()}_${downloadFile.name}`);
+      await uploadBytes(dlRef, downloadFile);
+      downloadUrl = await getDownloadURL(dlRef);
+      if (data.downloadUrl && data.downloadUrl.startsWith("https://")) {
+        try {
+          const old = storageRef(storage, data.downloadUrl);
+          await deleteObject(old);
+        } catch { }
+      }
+    }
+
+    const docData = {
+      ...data,
+      thumbnailUrl,
+      downloadUrl,
+      publishedAt: typeof data.publishedAt === "string" ? new Date(data.publishedAt) : data.publishedAt,
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      if (data.id) {
+        // Editer
+        const docRef = doc(db, postsPath, data.id);
+        await updateDoc(docRef, docData);
+      } else {
+        // Créer
+        await addDoc(collection(db, postsPath), {
+          ...docData,
+          createdAt: serverTimestamp(),
+        });
+      }
+      setAdding(false);
+      setEditing(null);
+      refreshPosts();
+    } catch (e) {
+      alert("Erreur lors de la sauvegarde.");
+    }
+    setUploading(false);
+  };
+
+  // Supprimer post
+  const handleDelete = async (post) => {
+    if (!window.confirm("Supprimer cet article ?")) return;
+    try {
+      await deleteDoc(doc(db, postsPath, post.id));
+      // Supprimer les fichiers liés
+      if (post.thumbnailUrl) {
+        try { await deleteObject(storageRef(storage, post.thumbnailUrl)); } catch { }
+      }
+      if (post.downloadUrl) {
+        try { await deleteObject(storageRef(storage, post.downloadUrl)); } catch { }
+      }
+      refreshPosts();
+    } catch {
+      alert("Erreur lors de la suppression.");
+    }
+  };
+
+  if (!user) {
+    return <Login onLogin={handleLogin} loading={authLoading} error={loginError} />;
+  }
+
+  if (adding) {
+    return <PostForm onSave={handleSave} uploading={uploading} onCancel={() => setAdding(false)} />;
+  }
+  if (editing) {
+    return <PostForm initial={editing} onSave={handleSave} uploading={uploading} onCancel={() => setEditing(null)} />;
+  }
+
+  return (
+    <div>
+      <AdminDashboard
+        posts={posts}
+        onAdd={() => setAdding(true)}
+        onEdit={setEditing}
+        onDelete={handleDelete}
+      />
+    </div>
+  );
+}
+
+// --- APP PRINCIPAL ---
+export default function App() {
+  // SIMULATEUR DE "ROUTING"
+  const [page, setPage] = useState("home"); // "home", "post", "admin"
+  const [selectedPost, setSelectedPost] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [filter, setFilter] = useState("");
+  const { user, checking } = useAuthSimu();
+  const [loading, setLoading] = useState(true);
+
+  // Charger posts
+  useEffect(() => {
+    setLoading(true);
+    let q = query(collection(db, postsPath), orderBy("publishedAt", "desc"));
+    if (filter) q = query(q, where("category", "==", filter));
+    getDocs(q)
+      .then(snapshot => setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))))
+      .finally(() => setLoading(false));
+  }, [filter, page]);
+
+  // Navigation
+  const handleNavigate = (p) => {
+    setPage(p);
+    setSelectedPost(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Ouverture article
+  const handleOpenPost = (post) => {
+    setSelectedPost(post);
+    setPage("post");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Déconnexion
+  const handleLogout = () => signOut(auth);
+
+  // -- RENDU PRINCIPAL
+  return (
+    <div className="min-h-screen bg-[#101010]">
+      <Header
+        onNavigate={handleNavigate}
+        page={page}
+        isAdmin={!!user}
+        onLogout={user ? handleLogout : null}
+      />
+      <main>
+        {/* Loading global */}
+        {checking || loading ? (
+          <Loader text={checking ? "Vérification..." : "Chargement..."} />
+        ) : (
+          <>
+            {page === "home" && (
+              <HomePage
+                posts={filter ? posts.filter(p => p.category === filter) : posts}
+                onOpenPost={handleOpenPost}
+                filter={filter}
+                setFilter={setFilter}
+              />
+            )}
+            {page === "post" && selectedPost && (
+              <PostPage post={selectedPost} onBack={() => setPage("home")} />
+            )}
+            {page === "admin" && (
+              <AdminPage user={user} onLogout={handleLogout} />
+            )}
+          </>
+        )}
+      </main>
+      {/* Footer */}
+      <footer className="mt-20 py-10 px-2 text-center text-[#888] text-sm fade-in">
+        <div>
+          © La crème du gaming 2025. Tous droits réservés. | Powered by <b>React</b>, <b>Firebase</b>, <b>Vercel</b>
+        </div>
+        <div className="mt-2">
+          <a href="https://github.com/josueraoult/buja-devil-blog" className="text-[#ff003c] hover:underline" target="_blank" rel="noopener noreferrer">
+            Code source sur GitHub
+          </a>
+        </div>
+      </footer>
+    </div>
+  );
+}
