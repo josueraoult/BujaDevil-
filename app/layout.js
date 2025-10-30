@@ -124,6 +124,36 @@ export default function RootLayout({ children }) {
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="manifest" href="/site.webmanifest" />
       </head>
+          <script
+  dangerouslySetInnerHTML={{
+    __html: `
+      (function() {
+        try {
+          // Gestion du thème
+          var theme = localStorage.getItem('theme') || 'system';
+          var systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          var appliedTheme = theme === 'system' ? systemTheme : theme;
+          
+          if (appliedTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+
+          // Gestion de la langue
+          var savedLanguage = localStorage.getItem('bujadevil_language');
+          if (!savedLanguage || savedLanguage === 'auto') {
+            var browserLang = navigator.language || navigator.userLanguage;
+            var primaryLang = browserLang.split('-')[0];
+            var supportedLangs = ['fr', 'en', 'es'];
+            var detectedLang = supportedLangs.includes(primaryLang) ? primaryLang : 'fr';
+            localStorage.setItem('bujadevil_language', detectedLang);
+          }
+        } catch (e) {}
+      })();
+    `,
+  }}
+/>
       <body className="font-sans antialiased bg-white dark:bg-dark-100 text-gray-900 dark:text-gray-100 transition-colors duration-300">
         <div className="min-h-screen flex flex-col">
           {/* Header sera intégré ici avec auth */}
