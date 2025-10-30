@@ -1,4 +1,4 @@
-// data/content.js - Système de base de données intégré pour BujaDevil
+// data/content.js - Système de base de données intégré pour BujaDevil avec notifications
 
 // ==================== CONFIGURATION INITIALE ====================
 export const SITE_CONFIG = {
@@ -45,6 +45,8 @@ class BlogDatabase {
         comments: [],
         likes: [],
         bookmarks: [],
+        commentLikes: [],
+        notifications: [],
         sessions: [],
         settings: {
           siteTitle: SITE_CONFIG.name,
@@ -85,13 +87,50 @@ class BlogDatabase {
 
   // Charger les données
   loadData() {
-    if (typeof window === 'undefined') return { users: [], articles: [], comments: [] }
+    if (typeof window === 'undefined') return { 
+      users: [], 
+      articles: [], 
+      comments: [], 
+      likes: [],
+      bookmarks: [],
+      commentLikes: [],
+      notifications: [],
+      sessions: [],
+      settings: {}
+    }
     try {
       const data = localStorage.getItem('bujadevil_data')
-      return data ? JSON.parse(data) : { users: [], articles: [], comments: [] }
+      if (!data) return this.getDefaultData()
+      
+      const parsed = JSON.parse(data)
+      // Assurer que tous les tableaux existent
+      return {
+        ...this.getDefaultData(),
+        ...parsed,
+        commentLikes: parsed.commentLikes || [],
+        notifications: parsed.notifications || []
+      }
     } catch (error) {
       console.error('Erreur chargement:', error)
-      return { users: [], articles: [], comments: [] }
+      return this.getDefaultData()
+    }
+  }
+
+  getDefaultData() {
+    return {
+      users: [],
+      articles: [],
+      comments: [],
+      likes: [],
+      bookmarks: [],
+      commentLikes: [],
+      notifications: [],
+      sessions: [],
+      settings: {
+        siteTitle: SITE_CONFIG.name,
+        language: 'auto',
+        theme: 'system'
+      }
     }
   }
 
@@ -291,6 +330,8 @@ class BlogDatabase {
     data.comments = data.comments.filter(c => c.articleId !== articleId)
     // Supprimer les likes associés
     data.likes = data.likes.filter(l => l.articleId !== articleId)
+    // Supprimer les bookmarks associés
+    data.bookmarks = data.bookmarks.filter(b => b.articleId !== articleId)
 
     data.articles.splice(articleIndex, 1)
     this.saveData(data)
@@ -382,11 +423,34 @@ class BlogDatabase {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       likes: 0,
-      isApproved: true
+      isApproved: true // Commentaire automatiquement approuvé
     }
 
     data.comments.unshift(newComment)
     this.saveData(data)
+
+    // Créer une notification pour l'admin
+    this.createAdminNotification({
+      type: 'new_comment',
+      title: 'Nouveau commentaire',
+      message: `${user.name} a commenté sur "${article.title}"`,
+      link: `/blog/${article.slug}#comments`,
+      relatedId: newComment.id
+    })
+
+    // Si c'est une réponse à un commentaire, notifier l'auteur du commentaire parent
+    if (commentData.parentId) {
+      const parentComment = data.comments.find(c => c.id === commentData.parentId)
+      if (parentComment && parentComment.authorId !== userId) {
+        this.createUserNotification(parentComment.authorId, {
+          type: 'comment_reply',
+          title: 'Réponse à votre commentaire',
+          message: `${user.name} a répondu à votre commentaire`,
+          link: `/blog/${article.slug}#comment-${newComment.id}`,
+          relatedId: newComment.id
+        })
+      }
+    }
 
     return { success: true, comment: newComment }
   }
@@ -443,6 +507,110 @@ class BlogDatabase {
     return { success: true }
   }
 
+  async toggleCommentLike(commentId, userId) {
+    const data = this.loadData()
+    const existingLike = data.commentLikes.find(cl => cl.commentId === commentId && cl.userId === userId)
+    const comment = data.comments.find(c => c.id === commentId)
+    
+    if (!comment) {
+      return { success: false, error: 'Commentaire non trouvé' }
+    }
+
+    if (existingLike) {
+      // Retirer le like
+      data.commentLikes = data.commentLikes.filter(cl => cl !== existingLike)
+      comment.likes = Math.max(0, (comment.likes || 0) - 1)
+    } else {
+      // Ajouter le like
+      data.commentLikes.push({
+        id: this.generateId(),
+        commentId,
+        userId,
+        createdAt: new Date().toISOString()
+      })
+      comment.likes = (comment.likes || 0) + 1
+
+      // Notifier l'auteur du commentaire (sauf si c'est l'utilisateur actuel)
+      if (comment.authorId !== userId) {
+        this.createUserNotification(comment.authorId, {
+          type: 'comment_like',
+          title: 'Votre commentaire a été aimé',
+          message: `${this.getUserById(userId)?.name || 'Quelqu\'un'} a aimé votre commentaire`,
+          link: `/blog/${data.articles.find(a => a.id === comment.articleId)?.slug}#comment-${commentId}`,
+          relatedId: commentId
+        })
+      }
+    }
+
+    this.saveData(data)
+    return { success: true, likes: comment.likes }
+  }
+
+  // ==================== SYSTÈME DE NOTIFICATIONS ====================
+  createUserNotification(userId, notificationData) {
+    const data = this.loadData()
+    
+    const notification = {
+      id: this.generateId(),
+      userId,
+      ...notificationData,
+      read: false,
+      createdAt: new Date().toISOString()
+    }
+
+    data.notifications.unshift(notification)
+    this.saveData(data)
+    return notification
+  }
+
+  createAdminNotification(notificationData) {
+    const data = this.loadData()
+    const adminUser = data.users.find(u => u.role === 'admin')
+    
+    if (adminUser) {
+      return this.createUserNotification(adminUser.id, notificationData)
+    }
+    return null
+  }
+
+  getUserNotifications(userId) {
+    const data = this.loadData()
+    return data.notifications
+      .filter(notification => notification.userId === userId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  }
+
+  markNotificationAsRead(notificationId) {
+    const data = this.loadData()
+    const notification = data.notifications.find(n => n.id === notificationId)
+    
+    if (notification) {
+      notification.read = true
+      this.saveData(data)
+      return { success: true }
+    }
+    
+    return { success: false, error: 'Notification non trouvée' }
+  }
+
+  markAllNotificationsAsRead(userId) {
+    const data = this.loadData()
+    data.notifications.forEach(notification => {
+      if (notification.userId === userId) {
+        notification.read = true
+      }
+    })
+    this.saveData(data)
+    return { success: true }
+  }
+
+  getUnreadNotificationCount(userId) {
+    const data = this.loadData()
+    return data.notifications.filter(
+      notification => notification.userId === userId && !notification.read
+    ).length
+  }
+
   // ==================== UTILITAIRES ====================
   generateSlug(title) {
     return title
@@ -474,6 +642,11 @@ class BlogDatabase {
     return user && user.role === 'admin'
   }
 
+  getUserById(userId) {
+    const data = this.loadData()
+    return data.users.find(u => u.id === userId)
+  }
+
   // ==================== STATISTIQUES ====================
   getStats() {
     const data = this.loadData()
@@ -482,6 +655,9 @@ class BlogDatabase {
       totalUsers: data.users.length,
       totalComments: data.comments.length,
       totalLikes: data.likes.length,
+      totalBookmarks: data.bookmarks.length,
+      totalCommentLikes: data.commentLikes.length,
+      totalNotifications: data.notifications.length,
       popularArticles: this.getArticles({ sort: 'popular', limit: 5 })
     }
   }
@@ -543,6 +719,13 @@ export const {
   getArticleComments,
   toggleLike,
   toggleBookmark,
+  toggleCommentLike,
+  createUserNotification,
+  createAdminNotification,
+  getUserNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  getUnreadNotificationCount,
   getStats,
   detectUserLanguage,
   updateLanguagePreference,
@@ -596,4 +779,4 @@ if (typeof window !== 'undefined') {
       blogDB.createArticle(article, data.users[0]?.id)
     })
   }
-      }
+}
