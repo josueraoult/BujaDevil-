@@ -17,6 +17,8 @@ export function ThemeProvider({ children, defaultTheme = 'system' }) {
   }, [defaultTheme])
 
   const applyTheme = (newTheme) => {
+    if (typeof window === 'undefined') return
+    
     const root = window.document.documentElement
     const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
     const appliedTheme = newTheme === 'system' ? systemTheme : newTheme
@@ -104,7 +106,7 @@ export function Button({
     secondary: 'bg-gray-100 dark:bg-dark-300 hover:bg-gray-200 dark:hover:bg-dark-400 text-gray-900 dark:text-gray-100 focus:ring-gray-500 border border-gray-300 dark:border-dark-400',
     danger: 'bg-red-600 hover:bg-red-700 text-white focus:ring-red-500 shadow-sm hover:shadow',
     ghost: 'bg-transparent hover:bg-gray-100 dark:hover:bg-dark-300 text-gray-700 dark:text-gray-300 focus:ring-gray-500',
-    glass: 'glass text-gray-900 dark:text-gray-100 hover:bg-opacity-20 focus:ring-white'
+    glass: 'backdrop-blur-md bg-white/10 dark:bg-dark-300/10 text-gray-900 dark:text-gray-100 hover:bg-opacity-20 focus:ring-white border border-white/20'
   }
 
   const sizes = {
@@ -153,7 +155,7 @@ export function Input({
       )}
       <input
         className={cn(
-          'input',
+          'w-full px-3 py-2 border border-gray-300 dark:border-dark-400 rounded-lg bg-white dark:bg-dark-200 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200',
           error && 'border-red-500 focus:ring-red-500 focus:border-red-500',
           className
         )}
@@ -186,7 +188,7 @@ export function Textarea({
       )}
       <textarea
         className={cn(
-          'input resize-none',
+          'w-full px-3 py-2 border border-gray-300 dark:border-dark-400 rounded-lg bg-white dark:bg-dark-200 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 resize-none',
           error && 'border-red-500 focus:ring-red-500 focus:border-red-500',
           className
         )}
@@ -220,7 +222,7 @@ export function Select({
       )}
       <select
         className={cn(
-          'input',
+          'w-full px-3 py-2 border border-gray-300 dark:border-dark-400 rounded-lg bg-white dark:bg-dark-200 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200',
           error && 'border-red-500 focus:ring-red-500 focus:border-red-500',
           className
         )}
@@ -246,7 +248,7 @@ export function Select({
 export function Card({ className, children, ...props }) {
   return (
     <div
-      className={cn('card', className)}
+      className={cn('bg-white dark:bg-dark-200 rounded-xl border border-gray-200 dark:border-dark-300 shadow-sm', className)}
       {...props}
     >
       {children}
@@ -322,10 +324,10 @@ export function Badge({
     success: 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800',
     warning: 'bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800',
     danger: 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800',
-    news: 'bg-accent-news/10 text-accent-news border border-accent-news/20',
-    gaming: 'bg-accent-gaming/10 text-accent-gaming border border-accent-gaming/20',
-    apps: 'bg-accent-apps/10 text-accent-apps border border-accent-apps/20',
-    tutorials: 'bg-accent-tutorials/10 text-accent-tutorials border border-accent-tutorials/20'
+    news: 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800',
+    gaming: 'bg-purple-100 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800',
+    apps: 'bg-cyan-100 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800',
+    tutorials: 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800'
   }
 
   return (
@@ -352,7 +354,7 @@ export function Modal({
   className 
 }) {
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && typeof window !== 'undefined') {
       document.body.style.overflow = 'hidden'
     } else {
       document.body.style.overflow = 'unset'
@@ -537,49 +539,85 @@ function Toast({ title, description, variant = 'default', onClose }) {
   )
 }
 
-// Tooltip component
-export function Tooltip({ 
-  children, 
-  content, 
-  position = 'top',
+// Progress bar
+export function ProgressBar({ 
+  value = 0, 
+  max = 100, 
+  showLabel = false,
   className 
 }) {
-  const [isVisible, setIsVisible] = useState(false)
+  const percentage = Math.min(100, Math.max(0, (value / max) * 100))
 
-  const positions = {
-    top: 'bottom-full left-1/2 transform -translate-x-1/2 mb-2',
-    bottom: 'top-full left-1/2 transform -translate-x-1/2 mt-2',
-    left: 'right-full top-1/2 transform -translate-y-1/2 mr-2',
-    right: 'left-full top-1/2 transform -translate-y-1/2 ml-2'
+  return (
+    <div className={cn('space-y-2', className)}>
+      {showLabel && (
+        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+          <span>Progression</span>
+          <span>{percentage.toFixed(0)}%</span>
+        </div>
+      )}
+      <div className="w-full bg-gray-200 dark:bg-dark-300 rounded-full h-2">
+        <div
+          className="bg-gradient-to-r from-primary-500 to-purple-500 h-2 rounded-full transition-all duration-500 ease-out"
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// Avatar component
+export function Avatar({ 
+  src, 
+  alt, 
+  size = 'md', 
+  fallback,
+  className 
+}) {
+  const [error, setError] = useState(false)
+
+  const sizes = {
+    sm: 'w-8 h-8',
+    md: 'w-10 h-10',
+    lg: 'w-12 h-12',
+    xl: 'w-16 h-16'
+  }
+
+  if (error || !src) {
+    return (
+      <div
+        className={cn(
+          'rounded-full bg-gradient-to-br from-primary-400 to-purple-500 flex items-center justify-center text-white font-semibold',
+          sizes[size],
+          className
+        )}
+      >
+        {fallback || (alt ? alt.charAt(0).toUpperCase() : '?')}
+      </div>
+    )
   }
 
   return (
-    <div className="relative inline-block">
-      <div
-        onMouseEnter={() => setIsVisible(true)}
-        onMouseLeave={() => setIsVisible(false)}
-        className="inline-block"
-      >
-        {children}
-      </div>
-      {isVisible && (
-        <div
-          className={cn(
-            'absolute z-50 px-3 py-2 text-sm text-white bg-gray-900 dark:bg-gray-700 rounded-lg shadow-lg whitespace-nowrap',
-            positions[position],
-            className
-          )}
-        >
-          {content}
-          <div className={cn(
-            'absolute w-2 h-2 bg-gray-900 dark:bg-gray-700 transform rotate-45',
-            position === 'top' && 'top-full left-1/2 -translate-x-1/2 -mt-1',
-            position === 'bottom' && 'bottom-full left-1/2 -translate-x-1/2 -mb-1',
-            position === 'left' && 'left-full top-1/2 -translate-y-1/2 -ml-1',
-            position === 'right' && 'right-full top-1/2 -translate-y-1/2 -mr-1'
-          )} />
-        </div>
+    <img
+      src={src}
+      alt={alt}
+      onError={() => setError(true)}
+      className={cn(
+        'rounded-full object-cover',
+        sizes[size],
+        className
       )}
+    />
+  )
+}
+
+// Table component (simplifié)
+export function Table({ className, children, ...props }) {
+  return (
+    <div className={cn('overflow-x-auto', className)}>
+      <table className="w-full" {...props}>
+        {children}
+      </table>
     </div>
   )
 }
@@ -646,41 +684,6 @@ export function Pagination({
   )
 }
 
-// Search input with debounce
-export function SearchInput({
-  onSearch,
-  placeholder = "Rechercher...",
-  delay = 300,
-  className,
-  ...props
-}) {
-  const [query, setQuery] = useState('')
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      onSearch(query)
-    }, delay)
-
-    return () => clearTimeout(timer)
-  }, [query, delay, onSearch])
-
-  return (
-    <div className={cn('relative', className)}>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={placeholder}
-        className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-dark-400 bg-white dark:bg-dark-200 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
-        {...props}
-      />
-      <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
-        🔍
-      </div>
-    </div>
-  )
-}
-
 // Tabs component
 export function Tabs({ 
   tabs, 
@@ -708,136 +711,4 @@ export function Tabs({
       </nav>
     </div>
   )
-}
-
-// Accordion component
-export function Accordion({ items, className }) {
-  const [openIndex, setOpenIndex] = useState(null)
-
-  return (
-    <div className={cn('space-y-2', className)}>
-      {items.map((item, index) => (
-        <div key={index} className="border border-gray-200 dark:border-dark-300 rounded-lg">
-          <button
-            className="w-full p-4 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-dark-300 transition-colors"
-            onClick={() => setOpenIndex(openIndex === index ? null : index)}
-          >
-            <span className="font-medium">{item.title}</span>
-            <span className={cn(
-              'transform transition-transform duration-200',
-              openIndex === index ? 'rotate-180' : 'rotate-0'
-            )}>
-              ▼
-            </span>
-          </button>
-          {openIndex === index && (
-            <div className="p-4 border-t border-gray-200 dark:border-dark-300 bg-white dark:bg-dark-200">
-              {item.content}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// Progress bar
-export function ProgressBar({ 
-  value = 0, 
-  max = 100, 
-  showLabel = false,
-  className 
-}) {
-  const percentage = Math.min(100, Math.max(0, (value / max) * 100))
-
-  return (
-    <div className={cn('space-y-2', className)}>
-      {showLabel && (
-        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-          <span>Progression</span>
-          <span>{percentage.toFixed(0)}%</span>
-        </div>
-      )}
-      <div className="w-full bg-gray-200 dark:bg-dark-300 rounded-full h-2">
-        <div
-          className="bg-gradient-to-r from-primary-500 to-accent-gaming h-2 rounded-full transition-all duration-500 ease-out"
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    </div>
-  )
-}
-
-// Avatar component
-export function Avatar({ 
-  src, 
-  alt, 
-  size = 'md', 
-  fallback,
-  className 
-}) {
-  const [error, setError] = useState(false)
-
-  const sizes = {
-    sm: 'w-8 h-8',
-    md: 'w-10 h-10',
-    lg: 'w-12 h-12',
-    xl: 'w-16 h-16'
-  }
-
-  if (error || !src) {
-    return (
-      <div
-        className={cn(
-          'rounded-full bg-gradient-to-br from-primary-400 to-accent-gaming flex items-center justify-center text-white font-semibold',
-          sizes[size],
-          className
-        )}
-      >
-        {fallback || (alt ? alt.charAt(0).toUpperCase() : '?')}
-      </div>
-    )
-  }
-
-  return (
-    <img
-      src={src}
-      alt={alt}
-      onError={() => setError(true)}
-      className={cn(
-        'rounded-full object-cover',
-        sizes[size],
-        className
-      )}
-    />
-  )
-}
-
-export default {
-  ThemeProvider,
-  useTheme,
-  ThemeToggle,
-  Button,
-  Input,
-  Textarea,
-  Select,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-  Badge,
-  Modal,
-  LoadingSpinner,
-  Skeleton,
-  ToastProvider,
-  useToast,
-  Tooltip,
-  Pagination,
-  SearchInput,
-  Tabs,
-  Accordion,
-  ProgressBar,
-  Avatar
 }
